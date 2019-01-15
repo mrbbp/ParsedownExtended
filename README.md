@@ -1,4 +1,4 @@
-# ParsedownExtreme 
+# ParsedownExtreme
 ![Release](	https://img.shields.io/github/release/BenjaminHoegh/ParsedownExtreme.svg?style=flat-square) ![GitHub (pre-)release](https://img.shields.io/github/release/BenjaminHoegh/ParsedownExtreme/all.svg?style=flat-square&label=pre-release) ![Github All Releases](https://img.shields.io/github/downloads/BenjaminHoegh/ParsedownExtreme/total.svg?style=flat-square)
 
 ParsedownExtreme is a extension to ParsedownExtra to add even more functions to the library.
@@ -35,7 +35,7 @@ Default `enabled`
   - [x] Buy some salad
   - [ ] Brush teeth
   - [x] Drink some water
-```  
+```
 
 - [ ] ToDos
   - [x] Buy some salad
@@ -54,7 +54,7 @@ To toggle Superscript & Subscript you most call `$ParsedownExtreme->superscript(
 Superscript: 19^th^
 
 Subscript: H~2~O
-```  
+```
 <img src='https://github.com/BenjaminHoegh/ParsedownExtreme/blob/master/docs/img/supandsub.png' height='100px'>
 
 
@@ -71,7 +71,7 @@ and `$ParsedownExtreme->mark('true'|'false')` for mark
 ++Inserted text++
 
 ==Marked text==
-```  
+```
 
 <img src='https://github.com/BenjaminHoegh/ParsedownExtreme/blob/master/docs/img/insertandmark.png' height='100px'>
 
@@ -111,13 +111,13 @@ To toggle Typograpic shurtcodes you most call `$ParsedownExtreme->typography('tr
 
 **Example**
 
-`(c) (C) (r) (R) (tm) (TM)`  
+`(c) (C) (r) (R) (tm) (TM)`
 <img src='https://github.com/BenjaminHoegh/ParsedownExtreme/blob/master/docs/img/typography.png' height='50px'>
 
 
 #### (La)KaTeX
 
-To enable KaTeX you must [download katex](https://katex.org)
+To enable (La)KaTeX you must [download katex](https://katex.org)
 
 To toggle KaTeX you most call `$ParsedownExtreme->katex('true'|'false')`
 
@@ -158,5 +158,5 @@ sequenceDiagram
     John->>Bob: How about you?
     Bob-->>John: Jolly good!
 %%
-```  
+```
 <img src='https://github.com/BenjaminHoegh/ParsedownExtreme/blob/master/docs/img/mermaid.png' height='250px'>

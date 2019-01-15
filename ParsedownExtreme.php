@@ -2,7 +2,8 @@
 
 class ParsedownExtreme extends ParsedownExtra
 {
-    const VERSION = '0.1.3-Alpha';
+    const VERSION = '1.0-beta-3';
+
 
     public function __construct()
     {
@@ -10,11 +11,20 @@ class ParsedownExtreme extends ParsedownExtra
 
 
         if (version_compare(parent::version, '0.8.0-beta-1') < 0) {
-            throw new Exception('ParsedownExtreme requires a later version of Parsedown');
+            throw new Exception('ParsedownExtreme requires a later version of Parsedown Extra');
         }
 
-        $this->BlockTypes['$'][] = 'Katex';
+        // Blocks
+
+        $this->BlockTypes['\\'][] = 'Latex';
+        $this->BlockTypes['$'][] = 'Latex';
         $this->BlockTypes['%'][] = 'Mermaid';
+
+        // Inline
+
+        $this->InlineTypes['\\'][] = 'Latex';
+        $this->inlineMarkerList .= '\\';
+
 
         $this->InlineTypes['='][] = 'MarkText';
         $this->inlineMarkerList .= '=';
@@ -26,21 +36,30 @@ class ParsedownExtreme extends ParsedownExtra
         $this->inlineMarkerList .= '^';
 
         $this->InlineTypes['~'][] = 'SubText';
-        $this->inlineMarkerList .= '~';
 
-        $this->InlineTypes['['][] = 'Embeding';
-        $this->inlineMarkerList .= '[';
     }
 
 
-    #
-    # Setters
-    #
-    protected $katexMode = false;
 
-    public function katex(bool $mode = true)
+    // Setters
+
+    protected $latexMode = false;
+
+    public function latex($input = true)
     {
-        $this->katexMode = $mode;
+        $this->latexMode = $input;
+
+        if($input == false) {
+            return $this;
+        }
+
+        $this->delimiters['block']['start'][] = '$$';
+        $this->delimiters['block']['end'][] = '$$';
+        $this->delimiters['block']['start'][] = '\\[';
+        $this->delimiters['block']['end'][] = '\\]';
+
+        $this->delimiters['inline']['start'][] = '\\(';
+        $this->delimiters['inline']['end'][] = '\\)';
 
         return $this;
     }
@@ -91,125 +110,37 @@ class ParsedownExtreme extends ParsedownExtra
         return $this;
     }
 
-    protected $embedingMode = true;
+    protected $mediaMode = true;
 
-    public function embeding(bool $embedingMode = true)
+    public function media(bool $mediaMode = true)
     {
-        $this->embedingMode = $embedingMode;
+        $this->mediaMode = $mediaMode;
 
         return $this;
     }
 
-    #
-    # Header
-
-    protected function blockHeader($Line)
-    {
-        $Block = parent::blockHeader($Line);
-
-        if (preg_match('/[ #]*{('.$this->regexAttribute.'+)}[ ]*$/', $Block['element']['handler']['argument'], $matches, PREG_OFFSET_CAPTURE)) {
-            $attributeString = $matches[1][0];
-
-            $Block['element']['attributes'] = $this->parseAttributeData($attributeString);
-
-            $Block['element']['handler']['argument'] = substr($Block['element']['handler']['argument'], 0, $matches[0][1]);
-        }
-
-        if (!isset($Block['element']['attributes']['id']) && isset($Block['element']['handler']['argument'])) {
-            $Block['element']['attributes']['id'] = preg_replace('/\s+/', '-', $this->hyphenize($Block['element']['handler']['argument']));
-        }
-
-        $link = "#".$Block['element']['attributes']['id'];
-
-        $Block['element']['handler']['argument'] = $Block['element']['handler']['argument']."<a class='heading-link' href='{$link}'><i class='fal fa-link'></i></a>";
-
-        return $Block;
-    }
 
 
-    #
-    # Setext
-
-    protected function blockSetextHeader($Line, array $Block = null)
-    {
-        $Block = parent::blockSetextHeader($Line, $Block);
-
-        if (preg_match('/[ ]*{('.$this->regexAttribute.'+)}[ ]*$/', $Block['element']['handler']['argument'], $matches, PREG_OFFSET_CAPTURE)) {
-            $attributeString = $matches[1][0];
-
-            $Block['element']['attributes'] = $this->parseAttributeData($attributeString);
-
-            $Block['element']['handler']['argument'] = substr($Block['element']['handler']['argument'], 0, $matches[0][1]);
-        }
-
-        if (!isset($Block['element']['attributes']['id']) && isset($Block['element']['handler']['argument'])) {
-            $Block['element']['attributes']['id'] = preg_replace('/\s+/', '-', $this->hyphenize($Block['element']['handler']['argument']));
-        }
-
-        return $Block;
-    }
 
 
-    private function hyphenize($string)
-    {
-        $dict = array(
-            "I'm"      => "I am",
-            "thier"    => "their",
-            // Add your own replacements here
-        );
-        return strtolower(
-            preg_replace(
-              array( '#[\\s-]+#', '#[^A-Za-z0-9\. -]+#' ),
-              array( '-', '' ),
-              // the full cleanString() can be downloaded from http://www.unexpectedit.com/php/php-clean-string-of-utf8-chars-convert-to-similar-ascii-char
-              $this->cleanString(
-                  str_replace( // preg_replace can be used to support more complicated replacements
-                      array_keys($dict),
-                      array_values($dict),
-                      urldecode($string)
-                  )
-              )
-            )
-        );
-    }
 
-    private function cleanString($text)
-    {
-        $utf8 = array(
-            '/[áàâãªä]/u'   =>   'a',
-            '/[ÁÀÂÃÄ]/u'    =>   'A',
-            '/[ÍÌÎÏ]/u'     =>   'I',
-            '/[íìîï]/u'     =>   'i',
-            '/[éèêë]/u'     =>   'e',
-            '/[ÉÈÊË]/u'     =>   'E',
-            '/[óòôõºö]/u'   =>   'o',
-            '/[ÓÒÔÕÖ]/u'    =>   'O',
-            '/[úùûü]/u'     =>   'u',
-            '/[ÚÙÛÜ]/u'     =>   'U',
-            '/ç/'           =>   'c',
-            '/Ç/'           =>   'C',
-            '/ñ/'           =>   'n',
-            '/Ñ/'           =>   'N',
-            '/–/'           =>   '-', // UTF-8 hyphen to "normal" hyphen
-            '/[’‘‹›‚]/u'    =>   ' ', // Literally a single quote
-            '/[“”«»„]/u'    =>   ' ', // Double quote
-            '/ /'           =>   ' ', // nonbreaking space (equiv. to 0x160)
-        );
-        return preg_replace(array_keys($utf8), array_values($utf8), $text);
-    }
+
+    // -------------------------------------------------------------------------
+    // -----------------------         Inline         --------------------------
+    // -------------------------------------------------------------------------
 
 
     #
     # Typography Replacer
     # --------------------------------------------------------------------------
 
-    protected function linesElements(array $lines)
+    protected function linesElements(array $Lines)
     {
         $Elements = array();
         $CurrentBlock = null;
 
-        foreach ($lines as $line) {
-            if (chop($line) === '') {
+        foreach ($Lines as $Line) {
+            if (chop($Line) === '') {
                 if (isset($CurrentBlock)) {
                     $CurrentBlock['interrupted'] = (
                         isset($CurrentBlock['interrupted'])
@@ -220,21 +151,21 @@ class ParsedownExtreme extends ParsedownExtra
                 continue;
             }
 
-            while (($beforeTab = strstr($line, "\t", true)) !== false) {
+            while (($beforeTab = strstr($Line, "\t", true)) !== false) {
                 $shortage = 4 - mb_strlen($beforeTab, 'utf-8') % 4;
 
-                $line = $beforeTab.str_repeat(' ', $shortage).substr($line, strlen($beforeTab) + 1);
+                $Line = $beforeTab.str_repeat(' ', $shortage).substr($Line, strlen($beforeTab) + 1);
             }
 
-            $indent = strspn($line, ' ');
+            $indent = strspn($Line, ' ');
 
-            $text = $indent > 0 ? substr($line, $indent) : $line;
+            $text = $indent > 0 ? substr($Line, $indent) : $Line;
 
-            # ~
+            // ~
 
-            $Line = array('body' => $line, 'indent' => $indent, 'text' => $text);
+            $Line = array('body' => $Line, 'indent' => $indent, 'text' => $text);
 
-            # ~
+            // ~
 
             if (isset($CurrentBlock['continuable'])) {
                 $methodName = 'block' . $CurrentBlock['type'] . 'Continue';
@@ -252,28 +183,27 @@ class ParsedownExtreme extends ParsedownExtra
                 }
             }
 
-            # ~
+            // ~
 
             $marker = $text[0];
 
-            # ~
+            // ~
 
-            $blockTypes = $this->unmarkedBlockTypes;
+            $BlockTypes = $this->unmarkedBlockTypes;
 
             if (isset($this->BlockTypes[$marker])) {
-                foreach ($this->BlockTypes[$marker] as $blockType) {
-                    $blockTypes []= $blockType;
+                foreach ($this->BlockTypes[$marker] as $BlockType) {
+                    $BlockTypes []= $BlockType;
                 }
             }
 
-            #
-            # ~
+            // ~
 
-            foreach ($blockTypes as $blockType) {
-                $Block = $this->{"block$blockType"}($Line, $CurrentBlock);
+            foreach ($BlockTypes as $BlockType) {
+                $Block = $this->{"block$BlockType"}($Line, $CurrentBlock);
 
                 if (isset($Block)) {
-                    $Block['type'] = $blockType;
+                    $Block['type'] = $BlockType;
 
                     if (! isset($Block['identified'])) {
                         if (isset($CurrentBlock)) {
@@ -283,7 +213,7 @@ class ParsedownExtreme extends ParsedownExtra
                         $Block['identified'] = true;
                     }
 
-                    if ($this->isBlockContinuable($blockType)) {
+                    if ($this->isBlockContinuable($BlockType)) {
                         $Block['continuable'] = true;
                     }
 
@@ -293,7 +223,7 @@ class ParsedownExtreme extends ParsedownExtra
                 }
             }
 
-            # ~
+            // ~
             if (isset($CurrentBlock) and $CurrentBlock['type'] === 'Paragraph') {
                 $Block = $this->paragraphContinue($Line, $CurrentBlock);
             }
@@ -305,7 +235,7 @@ class ParsedownExtreme extends ParsedownExtra
                     $Elements[] = $this->extractElement($CurrentBlock);
                 }
 
-                if ($this->typographyMode) {
+                if ($this->typographyMode and $Block['latex'] != true) {
                     $typographicReplace = array(
                         '(c)' => '&copy;',
                         '(C)' => '&copy;',
@@ -323,23 +253,25 @@ class ParsedownExtreme extends ParsedownExtra
             }
         }
 
-        # ~
+        // ~
 
         if (isset($CurrentBlock['continuable']) and $this->isBlockCompletable($CurrentBlock['type'])) {
             $methodName = 'block' . $CurrentBlock['type'] . 'Complete';
             $CurrentBlock = $this->$methodName($CurrentBlock);
         }
 
-        # ~
+        // ~
 
         if (isset($CurrentBlock)) {
             $Elements[] = $this->extractElement($CurrentBlock);
         }
 
-        # ~
+        // ~
 
         return $Elements;
     }
+
+
 
     #
     # Mark
@@ -364,80 +296,226 @@ class ParsedownExtreme extends ParsedownExtra
         }
     }
 
+    #
+    # Inline Latex
+    # --------------------------------------------------------------------------
 
-    //
-    // Embeding
-    protected function inlineEmbeding($excerpt)
+    protected function inlineLatex($excerpt)
     {
-        if (!$this->embedingMode) {
+        if (!$this->latexMode) {
             return;
         }
 
-        if (preg_match('/\[video.*src="([^"]*)".*\]/', $excerpt['text'], $matches)) {
-            $url = $matches[1];
-            $type = '';
+        foreach($this->delimiters['inline']['start'] as $key => $v) {
+            $start = preg_quote($this->delimiters['inline']['start'][$key], '/');
+            $end = preg_quote($this->delimiters['inline']['end'][$key], '/');
 
-            $needles = array('youtube','vimeo','dailymotion');
-            foreach ($needles as $needle) {
-                if (strpos($url, $needle) !== false) {
-                    $type = $needle;
-                }
-            }
+            if (preg_match('/^(?<!'.$start.')(?:('.$start.'))(?:(.*(?0)?.*)(?<!'.$start.')(?:(?(1)'.$end.')))/sU', $excerpt['text'], $matches)) {
+                $text = $matches[0];
+                $text = preg_replace('/[ ]*+\n/', ' ', $text);
 
-            switch ($type) {
-                case 'youtube':
-                    $element = 'iframe';
-                    $attributes = array(
-                        'src' => preg_replace('/.*\?v=([^\&\]]*).*/', 'https://www.youtube.com/embed/$1', $url),
-                        'frameborder' => '0',
-                        'allow' => 'autoplay',
-                        'allowfullscreen' => '',
-                        'sandbox' => 'allow-same-origin allow-scripts allow-forms'
-                    );
-                    $regxr = '';
-                    break;
-                case 'vimeo':
-                    $element = 'iframe';
-                    $attributes = array(
-                        'src' => preg_replace('/(?:https?:\/\/(?:[\w]{3}\.|player\.)*vimeo\.com(?:[\/\w:]*(?:\/videos)?)?\/([0-9]+)[^\s]*)/', 'https://player.vimeo.com/video/$1', $url),
-                        'frameborder' => '0',
-                        'allow' => 'autoplay',
-                        'allowfullscreen' => '',
-                        'sandbox' => 'allow-same-origin allow-scripts allow-forms'
-                    );
-                    $regxr = '';
-                    break;
-                case 'dailymotion':
-                    $element = 'iframe';
-                    $attributes = array(
-                        'src' => $url,
-                        'frameborder' => '0',
-                        'allow' => 'autoplay',
-                        'allowfullscreen' => '',
-                        'sandbox' => 'allow-same-origin allow-scripts allow-forms'
-                    );
-                    $regxr = '';
-                    break;
-                default:
-                    $element = 'video';
+                return array(
+                    'extent' => strlen($matches[0]),
+                    'element' => array(
+                        'text' => $text,
+                    ),
+                );
             }
+        }
+    }
+
+    // BUG: Not work with secound inline option
+    protected function inlineEscapeSequence($excerpt)
+    {
+        if(isset($excerpt['text'][1]) and in_array($excerpt['text'][1], $this->specialCharacters) and !preg_match('/\\\\\(.*\\\\\)/', $excerpt['text'])) {
 
             return array(
-                'extent' => strlen($matches[0]),
                 'element' => array(
-                    'name' => $element,
-                    'text' => $matches[1],
-                    'attributes' => $attributes
+                    'rawHtml' => $excerpt['text'][1],
+                    // 'name' => 'span',
+                    // 'attributes' => array(
+                    //     'style' => 'background-color: red;'
+                    // )
                 ),
+                'extent' => 2,
             );
+
+        }
+    }
+
+
+    // Media
+    // Override inlineImage
+    protected function inlineImage($excerpt)
+    {
+        if (!$this->mediaMode) {
+            return;
+        }
+        if (!isset($excerpt['text'][1]) or $excerpt['text'][1] !== '[') {
+            return;
+        }
+
+        $excerpt['text'] = substr($excerpt['text'], 1);
+
+        $link = $this->inlineLink($excerpt);
+
+        if ($link === null) {
+            return;
         }
 
 
+        $needles = array(
+            'video' => [
+                'youtube',
+                'vimeo',
+                'dailymotion',
+                'metacafe',
+            ],
+            'audio' => [
+                'spotify',
+                'soundcloud'
+            ]
+        );
+        $sourceType = '';
+        $sourceName = '';
+        foreach ($needles as $type => $group) {
+            foreach ($group as $name) {
+                if (strpos($link['element']['attributes']['href'], $name) !== false) {
+                    $sourceType = $type;
+                    $sourceName = $name;
+                }
+            }
+        }
 
-        // NOTE:
-        //
-        // [codepen_embed height="179" theme_id="dark" slug_hash="LBPJGV" default_tab="js,result" user="GeorgePark" preview="true" data-preview="true" data-editable="true"]See the Pen <a href='https://codepen.io/GeorgePark/pen/LBPJGV/'>Responsive Video Knockout Text (Pure CSS)</a> by George W. Park (<a href='https://codepen.io/GeorgePark'>@GeorgePark</a>) on <a href='https://codepen.io'>CodePen</a>.[/codepen_embed]
+        // Set HTML element
+        $element = 'iframe';
+
+        switch ([$sourceType, $sourceName]) {
+            // Video
+            case ['video', 'youtube']:
+                $attributes = array(
+                    'src' => preg_replace('/.*\?v=([^\&\]]*).*/', 'https://www.youtube.com/embed/$1', $link['element']['attributes']['href']),
+                );
+                break;
+            case ['video', 'vimeo']:
+                $attributes = array(
+                    'src' => preg_replace('/(?:https?:\/\/(?:[\w]{3}\.|player\.)*vimeo\.com(?:[\/\w:]*(?:\/videos)?)?\/([0-9]+)[^\s]*)/', 'https://player.vimeo.com/video/$1', $link['element']['attributes']['href']),
+                );
+                break;
+            // NOTE: Check up on this
+            case ['video', 'dailymotion']:
+                $attributes = array(
+                    'src' => $link['element']['attributes']['href'],
+                );
+                break;
+            case ['video', 'metacafe']:
+                $attributes = array(
+                    'src' => preg_replace('/.+(?:watch|embed)\/(.+)/', 'https://www.metacafe.com/embed/$1', $link['element']['attributes']['href']),
+                );
+                break;
+            // Audio
+            case ['audio', 'spotify']:
+                $uniqueId = $this->oembed('https://embed.spotify.com/oembed?format=json&url='.$link['element']['attributes']['href'], '/.*((?:track|artist|ablum|playlist)\\\\\/(?:[^\\\\\/]*)).+/');
+                if (empty($uniqueId)) {
+                    return;
+                }
+                $attributes = array(
+                    'height' => 300,
+                    'height' => 80,
+                    'src' => "https://open.spotify.com/embed/".preg_replace('/\\\/', '', $uniqueId),
+                );
+                break;
+            case ['audio', 'soundcloud']:
+                $uniqueId = $this->oembed('http://soundcloud.com/oembed?format=json&url='.$link['element']['attributes']['href'], '/.+Ftracks%2F([^\\\]*)\\\.+/');
+
+                $attributes = array(
+                    'src' => "https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/{$uniqueId}&color=%23ff5500&auto_play=true&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true&visual=true",
+                );
+                break;
+            default:
+
+                // URL regex
+                $reg_exUrl = "/(http|https|ftp|ftps)/";
+
+                // Check if URL
+                if (preg_match($reg_exUrl, $link['element']['attributes']['href'])) {
+                    // URL
+                    $headers = get_headers($link['element']['attributes']['href'], 1);
+                    $type = preg_replace('/^([^\/]+)(?:\/.+)/', '$1', $headers['Content-Type']);
+
+                    switch ($type) {
+                        case 'video':
+                            $element = 'video';
+                            break;
+                        case 'audio':
+                            $element = 'audio';
+                            break;
+                        default:
+                            $element = 'img';
+                    }
+                } else {
+                    // Local
+                    try {
+                        $type = preg_replace('/^([^\/]+)(?:\/.+)/', '$1', mime_content_type($link['element']['attributes']['href']));
+
+                        switch ($type) {
+                            case 'video':
+                                $element = 'video';
+                                break;
+                            case 'audio':
+                                $element = 'audio';
+                                break;
+                            default:
+                                $element = 'img';
+                        }
+                    } catch (Exception $e) {
+                        echo 'Caught exception: ',  $e->getMessage(), "\n";
+                    }
+                }
+                $attributes = array(
+                    'src' => $link['element']['attributes']['href'],
+                );
+        }
+
+        if (!empty($link['element']['handler']['argument'])) {
+            $attributes += ['alt' => $link['element']['handler']['argument']];
+        }
+
+        if ($type == 'video') {
+            // default settings
+            $attributes += [
+                'frameborder' => '0',
+                'allowfullscreen' => '',
+                'allow' => 'autoplay; encrypted-media',
+                'controls' => ''
+            ];
+        } elseif ($type == 'audio') {
+            // default settings
+            $attributes += [
+                'frameborder' => '0',
+                'allow' => 'autoplay; encrypted-media',
+                'controls' => ''
+            ];
+        }
+
+        $inline = array(
+            'extent' => $link['extent'] + 1,
+            'element' => array(
+                'text' => '',
+                'name' => $element,
+                'attributes' => $attributes,
+                'autobreak' => true,
+            ),
+        );
+
+        $inline['element']['attributes'] += $link['element']['attributes'];
+
+        unset($inline['element']['attributes']['href']);
+
+
+        return $inline;
     }
+
 
     #
     # Superscript
@@ -516,81 +594,128 @@ class ParsedownExtreme extends ParsedownExtra
         }
     }
 
+    // -------------------------------------------------------------------------
+    // -----------------------         Blocks         --------------------------
+    // -------------------------------------------------------------------------
+
+    // Header
+
+    protected function blockHeader($Line)
+    {
+        $Block = parent::blockHeader($Line);
+
+        if (preg_match('/[ #]*{('.$this->regexAttribute.'+)}[ ]*$/', $Block['element']['handler']['argument'], $matches, PREG_OFFSET_CAPTURE)) {
+            $attributeString = $matches[1][0];
+
+            $Block['element']['attributes'] = $this->parseAttributeData($attributeString);
+
+            $Block['element']['handler']['argument'] = substr($Block['element']['handler']['argument'], 0, $matches[0][1]);
+        }
+
+        if (!isset($Block['element']['attributes']['id']) && isset($Block['element']['handler']['argument'])) {
+            $Block['element']['attributes']['id'] = preg_replace('/\s+/', '-', $this->hyphenize($Block['element']['handler']['argument']));
+        }
+
+        $link = "#".$Block['element']['attributes']['id'];
+
+        $Block['element']['handler']['argument'] = $Block['element']['handler']['argument']."<a class='heading-link' href='{$link}'><i class='fal fa-link'></i></a>";
+
+        return $Block;
+    }
 
 
     #
-    # Block Katex
+    # Setext
+
+    protected function blockSetextHeader($Line, array $Block = null)
+    {
+        $Block = parent::blockSetextHeader($Line, $Block);
+
+        if (preg_match('/[ ]*{('.$this->regexAttribute.'+)}[ ]*$/', $Block['element']['handler']['argument'], $matches, PREG_OFFSET_CAPTURE)) {
+            $attributeString = $matches[1][0];
+
+            $Block['element']['attributes'] = $this->parseAttributeData($attributeString);
+
+            $Block['element']['handler']['argument'] = substr($Block['element']['handler']['argument'], 0, $matches[0][1]);
+        }
+
+        if (!isset($Block['element']['attributes']['id']) && isset($Block['element']['handler']['argument'])) {
+            $Block['element']['attributes']['id'] = preg_replace('/\s+/', '-', $this->hyphenize($Block['element']['handler']['argument']));
+        }
+
+        return $Block;
+    }
+
+
+    #
+    # Block Latex
     # --------------------------------------------------------------------------
 
-    protected function blockKatex($Line)
+    protected function blockLatex($Line, $Block = null)
     {
-        if (!$this->katexMode) {
+        if (!$this->latexMode) {
             return;
         }
 
-        $marker = $Line['text'][0];
-
-        $openerLength = strspn($Line['text'], $marker);
-
-        if ($openerLength < 2) {
-            return;
-        }
-
-        $infostring = trim(substr($Line['text'], $openerLength), "\t ");
-
-        if (strpos($infostring, '$') !== false) {
-            return;
-        }
-
-        $Element = array(
-            'text' => ''
-        );
 
         $Block = array(
-            'char' => $marker,
-            'openerLength' => $openerLength,
             'element' => array(
-                'element' => $Element
+                'text' => '',
             )
         );
 
-        return $Block;
-    }
-
-    protected function blockKatexContinue($Line, $Block)
-    {
-        if (!$this->katexMode) {
-            return;
+        foreach($this->delimiters['block']['start'] as $key => $v) {
+            $start = preg_quote($this->delimiters['block']['start'][$key], '/');
+            if(preg_match('/^('.$start.')/', $Line['text']))
+            {
+                return $Block;
+            }
         }
 
-        if (isset($Block['complete'])) {
-            return;
-        }
-
-        // A blank newline has occurred.
-        if (isset($block['interrupted'])) {
-            $block['element']['text'] .= "\n";
-            unset($block['interrupted']);
-        }
-
-        if (($len = strspn($Line['text'], $Block['char'])) >= $Block['openerLength'] and chop(substr($Line['text'], $len), ' ') === '') {
-            $Block['element']['element']['text'] = "$$" . substr($Block['element']['element']['text'] . "$$", 1);
-
-            $Block['complete'] = true;
-
-            return $Block;
-        }
-
-        $Block['element']['element']['text'] .= "\n" . $Line['body'];
+        $Block['element']['text'] .= "\n" . $Line['body'];
 
         return $Block;
     }
 
-    protected function blockKatexComplete($block)
+    protected function blockLatexContinue($Line, $Block)
     {
-        return $block;
+
+        if (isset($Block['complete']))
+        {
+            return;
+        }
+
+        if (isset($Block['interrupted']))
+        {
+            $Block['element']['text'] .= str_repeat("\n", $Block['interrupted']);
+            unset($Block['interrupted']);
+        }
+
+        foreach($this->delimiters['block']['start'] as $key => $v) {
+            $start = preg_quote($this->delimiters['block']['start'][$key], '/');
+            $end = preg_quote($this->delimiters['block']['end'][$key], '/');
+            // Check for end of the block.
+            if (preg_match('/'.$end.'/', $Line['text']))
+            {
+                $Block['element']['text'] = $this->delimiters['block']['start'][$key].$Block['element']['text'].$this->delimiters['block']['end'][$key];
+
+                $Block['complete'] = true;
+
+                return $Block;
+            }
+        }
+
+        $Block['element']['text'] .= "\n" . $Line['body'];
+
+        $Block['latex'] = true;
+
+        return $Block;
     }
 
+    protected function blockBoldTextComplete($Block)
+    {
+        return $Block;
+    }
 
     #
     # Block Mermaid
@@ -637,7 +762,6 @@ class ParsedownExtreme extends ParsedownExtra
 
     protected function blockMermaidContinue($Line, $Block)
     {
-        //if ($this->infostring == 'mermaid') {
         if (!$this->mermaidMode) {
             return;
         }
@@ -647,9 +771,9 @@ class ParsedownExtreme extends ParsedownExtra
         }
 
         // A blank newline has occurred.
-        if (isset($block['interrupted'])) {
-            $block['element']['text'] .= "\n";
-            unset($block['interrupted']);
+        if (isset($Block['interrupted'])) {
+            $Block['element']['text'] .= "\n";
+            unset($Block['interrupted']);
         }
 
         // Check for end of the block.
@@ -666,9 +790,9 @@ class ParsedownExtreme extends ParsedownExtra
         return $Block;
     }
 
-    protected function blockMermaidComplete($block)
+    protected function blockMermaidComplete($Block)
     {
-        return $block;
+        return $Block;
     }
 
 
@@ -840,19 +964,67 @@ class ParsedownExtreme extends ParsedownExtra
     }
 
 
-
-
-
     // -------------------------------------------------------------------------
-    // -----------------------      Expermentels      --------------------------
+    // -----------------------         Helpers        --------------------------
     // -------------------------------------------------------------------------
 
 
+    private function oembed($link, $regxr)
+    {
+        if ($data = @file_get_contents($link)) {
+            return preg_replace($regxr, '$1', $data);
+        }
 
+        return;
+    }
 
-    // -------------------------------------------------------------------------
-    // -------------------------------------------------------------------------
-    // -------------------------------------------------------------------------
+    private function hyphenize($string)
+    {
+        $dict = array(
+            "I'm"      => "I am",
+            "thier"    => "their",
+            // Add your own replacements here
+        );
+        return strtolower(
+            preg_replace(
+              array( '#[\\s-]+#', '#[^A-Za-z0-9\. -]+#' ),
+              array( '-', '' ),
+              // the full cleanString() can be downloaded from http://www.unexpectedit.com/php/php-clean-string-of-utf8-chars-convert-to-similar-ascii-char
+              $this->cleanString(
+                  str_replace( // preg_replace can be used to support more complicated replacements
+                      array_keys($dict),
+                      array_values($dict),
+                      urldecode($string)
+                  )
+              )
+            )
+        );
+    }
+
+    private function cleanString($text)
+    {
+        $utf8 = array(
+            '/[áàâãªä]/u'   =>   'a',
+            '/[ÁÀÂÃÄ]/u'    =>   'A',
+            '/[ÍÌÎÏ]/u'     =>   'I',
+            '/[íìîï]/u'     =>   'i',
+            '/[éèêë]/u'     =>   'e',
+            '/[ÉÈÊË]/u'     =>   'E',
+            '/[óòôõºö]/u'   =>   'o',
+            '/[ÓÒÔÕÖ]/u'    =>   'O',
+            '/[úùûü]/u'     =>   'u',
+            '/[ÚÙÛÜ]/u'     =>   'U',
+            '/ç/'           =>   'c',
+            '/Ç/'           =>   'C',
+            '/ñ/'           =>   'n',
+            '/Ñ/'           =>   'N',
+            '/–/'           =>   '-', // UTF-8 hyphen to "normal" hyphen
+            '/[’‘‹›‚]/u'    =>   ' ', // Literally a single quote
+            '/[“”«»„]/u'    =>   ' ', // Double quote
+            '/ /'           =>   ' ', // nonbreaking space (equiv. to 0x160)
+        );
+        return preg_replace(array_keys($utf8), array_values($utf8), $text);
+    }
 
     // Checkbox
     protected function checkbox(&$text, &$attributes)
@@ -871,219 +1043,6 @@ class ParsedownExtreme extends ParsedownExtra
     {
         return str_replace(array_keys($replace), array_values($replace), $subject);
     }
-
-
-    // TODO: Make use of user location
-    protected function remove_accents($string)
-    {
-        if (!preg_match('/[\x80-\xff]/', $string)) {
-            return $string;
-        }
-
-        if ($this->seems_utf8($string)) {
-            $chars = array(
-            // Decompositions for Latin-1 Supplement
-            'ª' => 'a', 'º' => 'o',
-            'À' => 'A', 'Á' => 'A',
-            'Â' => 'A', 'Ã' => 'A',
-            'Ä' => 'Ae', 'Å' => 'Aa',
-            'Æ' => 'AE','Ç' => 'C',
-            'È' => 'E', 'É' => 'E',
-            'Ê' => 'E', 'Ë' => 'E',
-            'Ì' => 'I', 'Í' => 'I',
-            'Î' => 'I', 'Ï' => 'I',
-            'Ð' => 'D', 'Ñ' => 'N',
-            'Ò' => 'O', 'Ó' => 'O',
-            'Ô' => 'O', 'Õ' => 'O',
-            'Ö' => 'Oe', 'Ù' => 'U',
-            'Ú' => 'U', 'Û' => 'U',
-            'Ü' => 'Ue', 'Ý' => 'Y',
-            'Þ' => 'TH','ß' => 'ss',
-            'à' => 'a', 'á' => 'a',
-            'â' => 'a', 'ã' => 'a',
-            'ä' => 'ae', 'å' => 'aa',
-            'æ' => 'ae','ç' => 'c',
-            'è' => 'e', 'é' => 'e',
-            'ê' => 'e', 'ë' => 'e',
-            'ì' => 'i', 'í' => 'i',
-            'î' => 'i', 'ï' => 'i',
-            'ð' => 'd', 'ñ' => 'n',
-            'ò' => 'o', 'ó' => 'o',
-            'ô' => 'o', 'õ' => 'o',
-            'ö' => 'oe', 'ø' => 'oe',
-            'ù' => 'u', 'ú' => 'u',
-            'û' => 'u', 'ü' => 'ue',
-            'ý' => 'y', 'þ' => 'th',
-            'ÿ' => 'y', 'Ø' => 'Oe',
-            // Decompositions for Latin Extended-A
-            'Ā' => 'A', 'ā' => 'a',
-            'Ă' => 'A', 'ă' => 'a',
-            'Ą' => 'A', 'ą' => 'a',
-            'Ć' => 'C', 'ć' => 'c',
-            'Ĉ' => 'C', 'ĉ' => 'c',
-            'Ċ' => 'C', 'ċ' => 'c',
-            'Č' => 'C', 'č' => 'c',
-            'Ď' => 'D', 'ď' => 'd',
-            'Đ' => 'DJ', 'đ' => 'dj',
-            'Ē' => 'E', 'ē' => 'e',
-            'Ĕ' => 'E', 'ĕ' => 'e',
-            'Ė' => 'E', 'ė' => 'e',
-            'Ę' => 'E', 'ę' => 'e',
-            'Ě' => 'E', 'ě' => 'e',
-            'Ĝ' => 'G', 'ĝ' => 'g',
-            'Ğ' => 'G', 'ğ' => 'g',
-            'Ġ' => 'G', 'ġ' => 'g',
-            'Ģ' => 'G', 'ģ' => 'g',
-            'Ĥ' => 'H', 'ĥ' => 'h',
-            'Ħ' => 'H', 'ħ' => 'h',
-            'Ĩ' => 'I', 'ĩ' => 'i',
-            'Ī' => 'I', 'ī' => 'i',
-            'Ĭ' => 'I', 'ĭ' => 'i',
-            'Į' => 'I', 'į' => 'i',
-            'İ' => 'I', 'ı' => 'i',
-            'Ĳ' => 'IJ','ĳ' => 'ij',
-            'Ĵ' => 'J', 'ĵ' => 'j',
-            'Ķ' => 'K', 'ķ' => 'k',
-            'ĸ' => 'k', 'Ĺ' => 'L',
-            'ĺ' => 'l', 'Ļ' => 'L',
-            'ļ' => 'l', 'Ľ' => 'L',
-            'ľ' => 'l', 'Ŀ' => 'L',
-            'ŀ' => 'l', 'Ł' => 'L',
-            'ł' => 'l', 'Ń' => 'N',
-            'ń' => 'n', 'Ņ' => 'N',
-            'ņ' => 'n', 'Ň' => 'N',
-            'ň' => 'n', 'ŉ' => 'n',
-            'Ŋ' => 'N', 'ŋ' => 'n',
-            'Ō' => 'O', 'ō' => 'o',
-            'Ŏ' => 'O', 'ŏ' => 'o',
-            'Ő' => 'O', 'ő' => 'o',
-            'Œ' => 'OE','œ' => 'oe',
-            'Ŕ' => 'R','ŕ' => 'r',
-            'Ŗ' => 'R','ŗ' => 'r',
-            'Ř' => 'R','ř' => 'r',
-            'Ś' => 'S','ś' => 's',
-            'Ŝ' => 'S','ŝ' => 's',
-            'Ş' => 'S','ş' => 's',
-            'Š' => 'S', 'š' => 's',
-            'Ţ' => 'T', 'ţ' => 't',
-            'Ť' => 'T', 'ť' => 't',
-            'Ŧ' => 'T', 'ŧ' => 't',
-            'Ũ' => 'U', 'ũ' => 'u',
-            'Ū' => 'U', 'ū' => 'u',
-            'Ŭ' => 'U', 'ŭ' => 'u',
-            'Ů' => 'U', 'ů' => 'u',
-            'Ű' => 'U', 'ű' => 'u',
-            'Ų' => 'U', 'ų' => 'u',
-            'Ŵ' => 'W', 'ŵ' => 'w',
-            'Ŷ' => 'Y', 'ŷ' => 'y',
-            'Ÿ' => 'Y', 'Ź' => 'Z',
-            'ź' => 'z', 'Ż' => 'Z',
-            'ż' => 'z', 'Ž' => 'Z',
-            'ž' => 'z', 'ſ' => 's',
-            // Decompositions for Latin Extended-B
-            'Ș' => 'S', 'ș' => 's',
-            'Ț' => 'T', 'ț' => 't',
-            // Euro Sign
-            '€' => 'E',
-            // GBP (Pound) Sign
-            '£' => '',
-            // Vowels with diacritic (Vietnamese)
-            // unmarked
-            'Ơ' => 'O', 'ơ' => 'o',
-            'Ư' => 'U', 'ư' => 'u',
-            // grave accent
-            'Ầ' => 'A', 'ầ' => 'a',
-            'Ằ' => 'A', 'ằ' => 'a',
-            'Ề' => 'E', 'ề' => 'e',
-            'Ồ' => 'O', 'ồ' => 'o',
-            'Ờ' => 'O', 'ờ' => 'o',
-            'Ừ' => 'U', 'ừ' => 'u',
-            'Ỳ' => 'Y', 'ỳ' => 'y',
-            // hook
-            'Ả' => 'A', 'ả' => 'a',
-            'Ẩ' => 'A', 'ẩ' => 'a',
-            'Ẳ' => 'A', 'ẳ' => 'a',
-            'Ẻ' => 'E', 'ẻ' => 'e',
-            'Ể' => 'E', 'ể' => 'e',
-            'Ỉ' => 'I', 'ỉ' => 'i',
-            'Ỏ' => 'O', 'ỏ' => 'o',
-            'Ổ' => 'O', 'ổ' => 'o',
-            'Ở' => 'O', 'ở' => 'o',
-            'Ủ' => 'U', 'ủ' => 'u',
-            'Ử' => 'U', 'ử' => 'u',
-            'Ỷ' => 'Y', 'ỷ' => 'y',
-            // tilde
-            'Ẫ' => 'A', 'ẫ' => 'a',
-            'Ẵ' => 'A', 'ẵ' => 'a',
-            'Ẽ' => 'E', 'ẽ' => 'e',
-            'Ễ' => 'E', 'ễ' => 'e',
-            'Ỗ' => 'O', 'ỗ' => 'o',
-            'Ỡ' => 'O', 'ỡ' => 'o',
-            'Ữ' => 'U', 'ữ' => 'u',
-            'Ỹ' => 'Y', 'ỹ' => 'y',
-            // acute accent
-            'Ấ' => 'A', 'ấ' => 'a',
-            'Ắ' => 'A', 'ắ' => 'a',
-            'Ế' => 'E', 'ế' => 'e',
-            'Ố' => 'O', 'ố' => 'o',
-            'Ớ' => 'O', 'ớ' => 'o',
-            'Ứ' => 'U', 'ứ' => 'u',
-            // dot below
-            'Ạ' => 'A', 'ạ' => 'a',
-            'Ậ' => 'A', 'ậ' => 'a',
-            'Ặ' => 'A', 'ặ' => 'a',
-            'Ẹ' => 'E', 'ẹ' => 'e',
-            'Ệ' => 'E', 'ệ' => 'e',
-            'Ị' => 'I', 'ị' => 'i',
-            'Ọ' => 'O', 'ọ' => 'o',
-            'Ộ' => 'O', 'ộ' => 'o',
-            'Ợ' => 'O', 'ợ' => 'o',
-            'Ụ' => 'U', 'ụ' => 'u',
-            'Ự' => 'U', 'ự' => 'u',
-            'Ỵ' => 'Y', 'ỵ' => 'y',
-            // Vowels with diacritic (Chinese, Hanyu Pinyin)
-            'ɑ' => 'a',
-            // macron
-            'Ǖ' => 'U', 'ǖ' => 'u',
-            // acute accent
-            'Ǘ' => 'U', 'ǘ' => 'u',
-            // caron
-            'Ǎ' => 'A', 'ǎ' => 'a',
-            'Ǐ' => 'I', 'ǐ' => 'i',
-            'Ǒ' => 'O', 'ǒ' => 'o',
-            'Ǔ' => 'U', 'ǔ' => 'u',
-            'Ǚ' => 'U', 'ǚ' => 'u',
-            // grave accent
-            'Ǜ' => 'U', 'ǜ' => 'u',
-            );
-
-            $string = strtr($string, $chars);
-        } else {
-            $chars = array();
-            // Assume ISO-8859-1 if not UTF-8
-            $chars['in'] = "\x80\x83\x8a\x8e\x9a\x9e"
-                ."\x9f\xa2\xa5\xb5\xc0\xc1\xc2"
-                ."\xc3\xc4\xc5\xc7\xc8\xc9\xca"
-                ."\xcb\xcc\xcd\xce\xcf\xd1\xd2"
-                ."\xd3\xd4\xd5\xd6\xd8\xd9\xda"
-                ."\xdb\xdc\xdd\xe0\xe1\xe2\xe3"
-                ."\xe4\xe5\xe7\xe8\xe9\xea\xeb"
-                ."\xec\xed\xee\xef\xf1\xf2\xf3"
-                ."\xf4\xf5\xf6\xf8\xf9\xfa\xfb"
-                ."\xfc\xfd\xff";
-
-            $chars['out'] = "EfSZszYcYuAAAAAACEEEEIIIINOOOOOOUUUUYaaaaaaceeeeiiiinoooooouuuuyy";
-
-            $string = strtr($string, $chars['in'], $chars['out']);
-            $double_chars = array();
-            $double_chars['in'] = array("\x8c", "\x9c", "\xc6", "\xd0", "\xde", "\xdf", "\xe6", "\xf0", "\xfe");
-            $double_chars['out'] = array('OE', 'oe', 'AE', 'DH', 'TH', 'ss', 'ae', 'dh', 'th');
-            $string = str_replace($double_chars['in'], $double_chars['out'], $string);
-        }
-
-        return $string;
-    }
-
 
 
 

@@ -1,30 +1,30 @@
 <?php
 
-class ParsedownExtreme extends ParsedownExtra
+class ParsedownExtreme extends Parsedown
 {
-    const VERSION = '1.0-beta-3';
-
+    const VERSION = '1.0-beta-4';
 
     public function __construct()
     {
-        parent::__construct();
+        if (version_compare(parent::version, '0.7.1') < 0) {
+            throw new Exception('ParsedownExtreme requires a later version of ParsedownExtra');
+        }
 
-
-        if (version_compare(parent::version, '0.8.0-beta-1') < 0) {
-            throw new Exception('ParsedownExtreme requires a later version of Parsedown Extra');
+        if(get_parent_class($this) === "ParsedownExtra") {
+            parent::__construct();
         }
 
         // Blocks
-
-        $this->BlockTypes['\\'][] = 'Latex';
-        $this->BlockTypes['$'][] = 'Latex';
+        $this->BlockTypes[':'] []= 'DefinitionList';
+        $this->BlockTypes['\\'][] = 'Math';
+        $this->BlockTypes['$'][] = 'Math';
         $this->BlockTypes['%'][] = 'Mermaid';
+        $this->BlockTypes['['][] = 'Toc';
 
         // Inline
 
-        $this->InlineTypes['\\'][] = 'Latex';
+        $this->InlineTypes['\\'][] = 'Math';
         $this->inlineMarkerList .= '\\';
-
 
         $this->InlineTypes['='][] = 'MarkText';
         $this->inlineMarkerList .= '=';
@@ -37,53 +37,50 @@ class ParsedownExtreme extends ParsedownExtra
 
         $this->InlineTypes['~'][] = 'SubText';
 
+        $this->InlineTypes['['][] = 'Kbd';
+        $this->inlineMarkerList .= '[';
     }
-
-
 
     // Setters
 
-    protected $latexMode = false;
+    protected $mathMode = false;
 
-    public function latex($input = true)
+    public function enableMath($input = true)
     {
-        $this->latexMode = $input;
+        $this->mathMode = $input;
 
-        if($input == false) {
+        if ($input == false) {
             return $this;
         }
-
-        $this->delimiters['block']['start'][] = '$$';
-        $this->delimiters['block']['end'][] = '$$';
-        $this->delimiters['block']['start'][] = '\\[';
-        $this->delimiters['block']['end'][] = '\\]';
-
-        $this->delimiters['inline']['start'][] = '\\(';
-        $this->delimiters['inline']['end'][] = '\\)';
 
         return $this;
     }
 
+    // ~
+
     protected $mermaidMode = false;
 
-    public function mermaid(bool $mode = true)
+    public function enableDiagrams(bool $mode = true)
     {
         $this->mermaidMode = $mode;
 
         return $this;
     }
 
-    protected $typographyMode = false;
+    // ~
 
-    public function typography(bool $mode = true)
+    protected $smartTypographyMode = false;
+
+    public function smartTypography(bool $mode = true)
     {
-        $this->typographyMode = $mode;
+        $this->smartTypographyMode = $mode;
 
         return $this;
     }
 
-    protected $superMode = false;
+    // ~
 
+    protected $superMode = true;
 
     public function superscript(bool $mode = true)
     {
@@ -91,6 +88,8 @@ class ParsedownExtreme extends ParsedownExtra
 
         return $this;
     }
+
+    // ~
 
     protected $markMode = true;
 
@@ -101,27 +100,46 @@ class ParsedownExtreme extends ParsedownExtra
         return $this;
     }
 
-    protected $insertMode = true;
+    // ~
 
-    public function insert(bool $insertMode = true)
+    protected $kbdMode = true;
+
+    public function kbd(bool $kbdMode = true)
     {
-        $this->insertMode = $insertMode;
-
-        return $this;
-    }
-
-    protected $mediaMode = true;
-
-    public function media(bool $mediaMode = true)
-    {
-        $this->mediaMode = $mediaMode;
+        $this->kbdMode = $kbdMode;
 
         return $this;
     }
 
 
+    // -------------------------------------------------------------------------
+    // -----------------------    Need to be first    --------------------------
+    // -------------------------------------------------------------------------
 
 
+    private $fullDocument;
+
+    protected function textElements($text)
+    {
+        // make sure no definitions are set
+        $this->DefinitionData = array();
+
+        // standardize line breaks
+        $text = str_replace(array("\r\n", "\r"), "\n", $text);
+
+        // remove surrounding line breaks
+        $text = trim($text, "\n");
+
+        // Save a copy of the document
+        $this->fullDocument = $text;
+
+        $cleanDoc = preg_replace('/(?>!\`)<!--(.|\s)*?-->/', '', $text);
+
+        // split text into lines
+        $lines = explode("\n", $cleanDoc);
+        // iterate through lines to identify blocks
+        return $this->linesElements($lines);
+    }
 
 
 
@@ -129,10 +147,9 @@ class ParsedownExtreme extends ParsedownExtra
     // -----------------------         Inline         --------------------------
     // -------------------------------------------------------------------------
 
-
-    #
-    # Typography Replacer
-    # --------------------------------------------------------------------------
+    //
+    // Typography Replacer
+    // -------------------------------------------------------------------------
 
     protected function linesElements(array $Lines)
     {
@@ -224,7 +241,7 @@ class ParsedownExtreme extends ParsedownExtra
             }
 
             // ~
-            if (isset($CurrentBlock) and $CurrentBlock['type'] === 'Paragraph') {
+            if (isset($CurrentBlock) && $CurrentBlock['type'] === 'Paragraph') {
                 $Block = $this->paragraphContinue($Line, $CurrentBlock);
             }
 
@@ -235,17 +252,10 @@ class ParsedownExtreme extends ParsedownExtra
                     $Elements[] = $this->extractElement($CurrentBlock);
                 }
 
-                if ($this->typographyMode and $Block['latex'] != true) {
-                    $typographicReplace = array(
-                        '(c)' => '&copy;',
-                        '(C)' => '&copy;',
-                        '(r)' => '&reg;',
-                        '(R)' => '&reg;',
-                        '(tm)' => '&trade;',
-                        '(TM)' => '&trade;'
-                    );
-                    $Line = $this->strReplaceAssoc($typographicReplace, $Line);
+                if ($this->smartTypographyMode && $Block['math'] != true) {
+                    $Line = $this->smartTypographyReplace($Line);
                 }
+
 
                 $CurrentBlock = $this->paragraph($Line);
 
@@ -255,7 +265,7 @@ class ParsedownExtreme extends ParsedownExtra
 
         // ~
 
-        if (isset($CurrentBlock['continuable']) and $this->isBlockCompletable($CurrentBlock['type'])) {
+        if (isset($CurrentBlock['continuable']) && $this->isBlockCompletable($CurrentBlock['type'])) {
             $methodName = 'block' . $CurrentBlock['type'] . 'Complete';
             $CurrentBlock = $this->$methodName($CurrentBlock);
         }
@@ -272,21 +282,18 @@ class ParsedownExtreme extends ParsedownExtra
     }
 
 
+    //
+    // Inline Mark
+    // -------------------------------------------------------------------------
 
-    #
-    # Mark
-    # --------------------------------------------------------------------------
-
-    protected function inlineMarkText($excerpt)
+    protected function inlineMarkText($Excerpt)
     {
         if (!$this->markMode) {
             return;
         }
 
-        if (preg_match('/^(==)([\s\S]*?)(==)/', $excerpt['text'], $matches)) {
+        if (preg_match('/^(==)([^=]*?)(==)/', $Excerpt['text'], $matches)) {
             return array(
-                // How many characters to advance the Parsedown's
-                // cursor after being done processing this tag.
                 'extent' => strlen($matches[0]),
                 'element' => array(
                     'name' => 'mark',
@@ -296,242 +303,71 @@ class ParsedownExtreme extends ParsedownExtra
         }
     }
 
-    #
-    # Inline Latex
-    # --------------------------------------------------------------------------
 
-    protected function inlineLatex($excerpt)
+    //
+    // Inline Math
+    // -------------------------------------------------------------------------
+
+    protected function inlineMath($Excerpt)
     {
-        if (!$this->latexMode) {
+        if (!$this->mathMode) {
             return;
         }
 
-        foreach($this->delimiters['inline']['start'] as $key => $v) {
-            $start = preg_quote($this->delimiters['inline']['start'][$key], '/');
-            $end = preg_quote($this->delimiters['inline']['end'][$key], '/');
-
-            if (preg_match('/^(?<!'.$start.')(?:('.$start.'))(?:(.*(?0)?.*)(?<!'.$start.')(?:(?(1)'.$end.')))/sU', $excerpt['text'], $matches)) {
-                $text = $matches[0];
-                $text = preg_replace('/[ ]*+\n/', ' ', $text);
-
-                return array(
-                    'extent' => strlen($matches[0]),
-                    'element' => array(
-                        'text' => $text,
-                    ),
-                );
-            }
-        }
-    }
-
-    // BUG: Not work with secound inline option
-    protected function inlineEscapeSequence($excerpt)
-    {
-        if(isset($excerpt['text'][1]) and in_array($excerpt['text'][1], $this->specialCharacters) and !preg_match('/\\\\\(.*\\\\\)/', $excerpt['text'])) {
-
+        // if (preg_match('/^(?<!\\\\)((?<!\\\\\()\\\\\((?!\\\\\())(.*?)(?<!\\\\)(?<!\\\\\()((?<!\\\\\))\\\\\)(?!\\\\\)))(?!\\\\\()/s', $Excerpt['text'], $matches)) {
+        if (preg_match('/^(?<!\\\\)(?<!\\\\\()\\\\\((.*?)(?<!\\\\\()\\\\\)(?!\\\\\))/s', $Excerpt['text'], $matches)) {
             return array(
+                'extent' => strlen($matches[0]),
                 'element' => array(
-                    'rawHtml' => $excerpt['text'][1],
-                    // 'name' => 'span',
-                    // 'attributes' => array(
-                    //     'style' => 'background-color: red;'
-                    // )
+                    'text' =>  $matches[0]
                 ),
-                'extent' => 2,
             );
-
         }
     }
 
+    protected $specialCharacters = array(
+        '\\', '`', '*', '_', '{', '}', '[', ']', '(', ')', '<', '>', '#', '+', '-', '.', '!', '|', '~', '^', '='
+    );
 
-    // Media
-    // Override inlineImage
-    protected function inlineImage($excerpt)
+
+    //
+    // Inline Escape
+    // -------------------------------------------------------------------------
+
+    protected function inlineEscapeSequence($Excerpt)
     {
-        if (!$this->mediaMode) {
-            return;
-        }
-        if (!isset($excerpt['text'][1]) or $excerpt['text'][1] !== '[') {
-            return;
-        }
-
-        $excerpt['text'] = substr($excerpt['text'], 1);
-
-        $link = $this->inlineLink($excerpt);
-
-        if ($link === null) {
-            return;
-        }
-
-
-        $needles = array(
-            'video' => [
-                'youtube',
-                'vimeo',
-                'dailymotion',
-                'metacafe',
-            ],
-            'audio' => [
-                'spotify',
-                'soundcloud'
-            ]
+        $Element = array(
+            'element' => array(
+                'rawHtml' => $Excerpt['text'][1],
+            ),
+            'extent' => 2,
         );
-        $sourceType = '';
-        $sourceName = '';
-        foreach ($needles as $type => $group) {
-            foreach ($group as $name) {
-                if (strpos($link['element']['attributes']['href'], $name) !== false) {
-                    $sourceType = $type;
-                    $sourceName = $name;
-                }
+
+        if ($this->mathMode) {
+            if (isset($Excerpt['text'][1]) && in_array($Excerpt['text'][1], $this->specialCharacters) && !preg_match('/(?<!\\\\)((?<!\\\\\()\\\\\((?!\\\\\())(.*?)(?<!\\\\)(?<!\\\\\()((?<!\\\\\))\\\\\)(?!\\\\\)))(?!\\\\\()/s', $Excerpt['text'])) {
+                return $Element;
+            }
+        } else {
+            if (isset($Excerpt['text'][1]) && in_array($Excerpt['text'][1], $this->specialCharacters)) {
+                return $Element;
             }
         }
-
-        // Set HTML element
-        $element = 'iframe';
-
-        switch ([$sourceType, $sourceName]) {
-            // Video
-            case ['video', 'youtube']:
-                $attributes = array(
-                    'src' => preg_replace('/.*\?v=([^\&\]]*).*/', 'https://www.youtube.com/embed/$1', $link['element']['attributes']['href']),
-                );
-                break;
-            case ['video', 'vimeo']:
-                $attributes = array(
-                    'src' => preg_replace('/(?:https?:\/\/(?:[\w]{3}\.|player\.)*vimeo\.com(?:[\/\w:]*(?:\/videos)?)?\/([0-9]+)[^\s]*)/', 'https://player.vimeo.com/video/$1', $link['element']['attributes']['href']),
-                );
-                break;
-            // NOTE: Check up on this
-            case ['video', 'dailymotion']:
-                $attributes = array(
-                    'src' => $link['element']['attributes']['href'],
-                );
-                break;
-            case ['video', 'metacafe']:
-                $attributes = array(
-                    'src' => preg_replace('/.+(?:watch|embed)\/(.+)/', 'https://www.metacafe.com/embed/$1', $link['element']['attributes']['href']),
-                );
-                break;
-            // Audio
-            case ['audio', 'spotify']:
-                $uniqueId = $this->oembed('https://embed.spotify.com/oembed?format=json&url='.$link['element']['attributes']['href'], '/.*((?:track|artist|ablum|playlist)\\\\\/(?:[^\\\\\/]*)).+/');
-                if (empty($uniqueId)) {
-                    return;
-                }
-                $attributes = array(
-                    'height' => 300,
-                    'height' => 80,
-                    'src' => "https://open.spotify.com/embed/".preg_replace('/\\\/', '', $uniqueId),
-                );
-                break;
-            case ['audio', 'soundcloud']:
-                $uniqueId = $this->oembed('http://soundcloud.com/oembed?format=json&url='.$link['element']['attributes']['href'], '/.+Ftracks%2F([^\\\]*)\\\.+/');
-
-                $attributes = array(
-                    'src' => "https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/{$uniqueId}&color=%23ff5500&auto_play=true&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true&visual=true",
-                );
-                break;
-            default:
-
-                // URL regex
-                $reg_exUrl = "/(http|https|ftp|ftps)/";
-
-                // Check if URL
-                if (preg_match($reg_exUrl, $link['element']['attributes']['href'])) {
-                    // URL
-                    $headers = get_headers($link['element']['attributes']['href'], 1);
-                    $type = preg_replace('/^([^\/]+)(?:\/.+)/', '$1', $headers['Content-Type']);
-
-                    switch ($type) {
-                        case 'video':
-                            $element = 'video';
-                            break;
-                        case 'audio':
-                            $element = 'audio';
-                            break;
-                        default:
-                            $element = 'img';
-                    }
-                } else {
-                    // Local
-                    try {
-                        $type = preg_replace('/^([^\/]+)(?:\/.+)/', '$1', mime_content_type($link['element']['attributes']['href']));
-
-                        switch ($type) {
-                            case 'video':
-                                $element = 'video';
-                                break;
-                            case 'audio':
-                                $element = 'audio';
-                                break;
-                            default:
-                                $element = 'img';
-                        }
-                    } catch (Exception $e) {
-                        echo 'Caught exception: ',  $e->getMessage(), "\n";
-                    }
-                }
-                $attributes = array(
-                    'src' => $link['element']['attributes']['href'],
-                );
-        }
-
-        if (!empty($link['element']['handler']['argument'])) {
-            $attributes += ['alt' => $link['element']['handler']['argument']];
-        }
-
-        if ($type == 'video') {
-            // default settings
-            $attributes += [
-                'frameborder' => '0',
-                'allowfullscreen' => '',
-                'allow' => 'autoplay; encrypted-media',
-                'controls' => ''
-            ];
-        } elseif ($type == 'audio') {
-            // default settings
-            $attributes += [
-                'frameborder' => '0',
-                'allow' => 'autoplay; encrypted-media',
-                'controls' => ''
-            ];
-        }
-
-        $inline = array(
-            'extent' => $link['extent'] + 1,
-            'element' => array(
-                'text' => '',
-                'name' => $element,
-                'attributes' => $attributes,
-                'autobreak' => true,
-            ),
-        );
-
-        $inline['element']['attributes'] += $link['element']['attributes'];
-
-        unset($inline['element']['attributes']['href']);
-
-
-        return $inline;
     }
 
 
-    #
-    # Superscript
-    # --------------------------------------------------------------------------
 
-    protected function inlineSuperText($excerpt)
+    //
+    // Inline Superscript
+    // -------------------------------------------------------------------------
+
+    protected function inlineSuperText($Excerpt)
     {
         if (!$this->superMode) {
             return;
         }
 
-        if (preg_match('/(?:\^(?!\^)([^\^ ]*)\^(?!\^))/', $excerpt['text'], $matches)) {
+        if (preg_match('/(?:\^(?!\^)([^\^ ]*)\^(?!\^))/', $Excerpt['text'], $matches)) {
             return array(
-
-                // How many characters to advance the Parsedown's
-                // cursor after being done processing this tag.
                 'extent' => strlen($matches[0]),
                 'element' => array(
                     'name' => 'sup',
@@ -543,21 +379,19 @@ class ParsedownExtreme extends ParsedownExtra
         }
     }
 
-    #
-    # Subscript
-    # --------------------------------------------------------------------------
 
-    protected function inlineSubText($excerpt)
+    //
+    // Inline Subscript
+    // -------------------------------------------------------------------------
+
+    protected function inlineSubText($Excerpt)
     {
         if (!$this->superMode) {
             return;
         }
 
-        if (preg_match('/(?:~(?!~)([^~ ]*)~(?!~))/', $excerpt['text'], $matches)) {
+        if (preg_match('/(?:~(?!~)([^~ ]*)~(?!~))/', $Excerpt['text'], $matches)) {
             return array(
-
-                // How many characters to advance the Parsedown's
-                // cursor after being done processing this tag.
                 'extent' => strlen($matches[0]),
                 'element' => array(
                     'name' => 'sub',
@@ -569,236 +403,568 @@ class ParsedownExtreme extends ParsedownExtra
         }
     }
 
-    #
-    # Insert
-    # --------------------------------------------------------------------------
 
-    protected function inlineInsertText($excerpt)
+    //
+    // Inline Strikethrough
+    // -------------------------------------------------------------------------
+
+    protected function inlineStrikethrough($Excerpt)
     {
-        if (!$this->insertMode) {
+        if (!isset($Excerpt['text'][1])) {
             return;
         }
 
-        if (preg_match('/^(\+\+)([\s\S]*?)(\+\+)/', $excerpt['text'], $matches)) {
+        if ($Excerpt['text'][1] === '~' && preg_match('/^~~(?=\S)(.+?)(?<=\S)~~/', $Excerpt['text'], $matches)) {
+            return array(
+                'extent' => strlen($matches[0]),
+                'element' => array(
+                    'name' => 's',
+                    'handler' => array(
+                        'function' => 'lineElements',
+                        'argument' => $matches[1],
+                        'destination' => 'elements',
+                    )
+                ),
+            );
+        }
+    }
+
+
+    //
+    // Inline Insert
+    // -------------------------------------------------------------------------
+
+    protected function inlineInsertText($Excerpt)
+    {
+
+        if (preg_match('/^(\+\+)([^+]*?)(\+\+)/', $Excerpt['text'], $matches)) {
             return array(
 
-                // How many characters to advance the Parsedown's
-                // cursor after being done processing this tag.
                 'extent' => strlen($matches[0]),
                 'element' => array(
                     'name' => 'ins',
                     'text' => $matches[2]
+                ),
+            );
+        }
+    }
+
+
+    //
+    // Inline KBD
+    // -------------------------------------------------------------------------
+
+    protected function inlineKbd($Excerpt)
+    {
+        if (!$this->kbdMode) {
+            return;
+        }
+
+        if (preg_match('/^(?<!\[)(?:\[\[([^\[\]]*|[\[\]])\]\])(?!\])/s', $Excerpt['text'], $matches)) {
+            return array(
+                'extent' => strlen($matches[0]),
+                'element' => array(
+                    'name' => 'kbd',
+                    'text' => $matches[1]
                 ),
 
             );
         }
     }
 
+
+
+
+
     // -------------------------------------------------------------------------
     // -----------------------         Blocks         --------------------------
     // -------------------------------------------------------------------------
 
+
+
+    //
     // Header
+    // -------------------------------------------------------------------------
 
     protected function blockHeader($Line)
     {
         $Block = parent::blockHeader($Line);
-
         if (preg_match('/[ #]*{('.$this->regexAttribute.'+)}[ ]*$/', $Block['element']['handler']['argument'], $matches, PREG_OFFSET_CAPTURE)) {
             $attributeString = $matches[1][0];
-
             $Block['element']['attributes'] = $this->parseAttributeData($attributeString);
-
             $Block['element']['handler']['argument'] = substr($Block['element']['handler']['argument'], 0, $matches[0][1]);
         }
 
+        // createAnchorID
         if (!isset($Block['element']['attributes']['id']) && isset($Block['element']['handler']['argument'])) {
-            $Block['element']['attributes']['id'] = preg_replace('/\s+/', '-', $this->hyphenize($Block['element']['handler']['argument']));
+            $Block['element']['attributes']['id'] = $this->createAnchorID($Block['element']['handler']['argument'], ['transliterate' => false]);
         }
 
         $link = "#".$Block['element']['attributes']['id'];
 
-        $Block['element']['handler']['argument'] = $Block['element']['handler']['argument']."<a class='heading-link' href='{$link}'><i class='fal fa-link'></i></a>";
+        $Block['element']['handler']['argument'] = $Block['element']['handler']['argument']."<a class='heading-link' href='{$link}'> <i class='fas fa-link'></i></a>";
+
+        // ~
 
         return $Block;
     }
 
-
-    #
-    # Setext
-
+    //
+    // Setext
     protected function blockSetextHeader($Line, array $Block = null)
     {
         $Block = parent::blockSetextHeader($Line, $Block);
-
         if (preg_match('/[ ]*{('.$this->regexAttribute.'+)}[ ]*$/', $Block['element']['handler']['argument'], $matches, PREG_OFFSET_CAPTURE)) {
             $attributeString = $matches[1][0];
-
             $Block['element']['attributes'] = $this->parseAttributeData($attributeString);
-
             $Block['element']['handler']['argument'] = substr($Block['element']['handler']['argument'], 0, $matches[0][1]);
         }
 
+        // createAnchorID
         if (!isset($Block['element']['attributes']['id']) && isset($Block['element']['handler']['argument'])) {
-            $Block['element']['attributes']['id'] = preg_replace('/\s+/', '-', $this->hyphenize($Block['element']['handler']['argument']));
+            $Block['element']['attributes']['id'] = $this->createAnchorID($Block['element']['handler']['argument'], ['transliterate' => false]);
         }
+
+        if ($Block['type'] == 'Paragraph') {
+            $link = "#".$Block['element']['attributes']['id'];
+            $Block['element']['handler']['argument'] = $Block['element']['handler']['argument']."<a class='heading-link' href='{$link}'> <i class='fas fa-link'></i></a>";
+        }
+
+        // ~
 
         return $Block;
     }
 
 
-    #
-    # Block Latex
-    # --------------------------------------------------------------------------
+    //
+    // Toc
+    // -------------------------------------------------------------------------
 
-    protected function blockLatex($Line, $Block = null)
+    private $tocSettings;
+
+    public function toc($input = null)
     {
-        if (!$this->latexMode) {
-            return;
-        }
+        $Line['text'] = '[toc]';
+        $Line['toc']['type'] = 'string';
 
-
-        $Block = array(
-            'element' => array(
-                'text' => '',
-            )
-        );
-
-        foreach($this->delimiters['block']['start'] as $key => $v) {
-            $start = preg_quote($this->delimiters['block']['start'][$key], '/');
-            if(preg_match('/^('.$start.')/', $Line['text']))
-            {
-                return $Block;
+        if (is_array($input)) {
+            // selectors
+            if (isset($input['selector'])) {
+                if (!is_array($input['selector'])) {
+                    throw new Exception("Selector must be a array");
+                }
+                $this->tocSettings['selectors'] = $input['selector'];
             }
-        }
 
-        $Block['element']['text'] .= "\n" . $Line['body'];
-
-        return $Block;
-    }
-
-    protected function blockLatexContinue($Line, $Block)
-    {
-
-        if (isset($Block['complete']))
-        {
-            return;
-        }
-
-        if (isset($Block['interrupted']))
-        {
-            $Block['element']['text'] .= str_repeat("\n", $Block['interrupted']);
-            unset($Block['interrupted']);
-        }
-
-        foreach($this->delimiters['block']['start'] as $key => $v) {
-            $start = preg_quote($this->delimiters['block']['start'][$key], '/');
-            $end = preg_quote($this->delimiters['block']['end'][$key], '/');
-            // Check for end of the block.
-            if (preg_match('/'.$end.'/', $Line['text']))
-            {
-                $Block['element']['text'] = $this->delimiters['block']['start'][$key].$Block['element']['text'].$this->delimiters['block']['end'][$key];
-
-                $Block['complete'] = true;
-
-                return $Block;
+            // Inline
+            if (isset($input['inline'])) {
+                if (!is_bool($input['inline'])) {
+                    throw new Exception("Inline must be a boolean");
+                }
+                $this->tocSettings['inline'] = $input['inline'];
             }
+
+            // Scope
+            if (isset($input['scope'])) {
+                if (!is_string($input['scope'])) {
+                    throw new Exception("Scope must be a string");
+                }
+                $this->fullDocument = $input['scope'];
+            }
+        } elseif (is_string($input)) {
+            $this->fullDocument = $input;
+        } else {
+            throw new Exception("Unexpected parameter type");
         }
 
-        $Block['element']['text'] .= "\n" . $Line['body'];
-
-        $Block['latex'] = true;
-
-        return $Block;
+        return $this->blockToc($Line, null, false);
     }
 
-    protected function blockBoldTextComplete($Block)
+    // ~
+
+    protected $contentsListString;
+    protected $contentsListArray = array();
+    protected $firstHeadLevel = 0;
+
+    // ~
+
+    protected function blockToc(array $Line, array $Block = null, $isInline = true)
     {
-        return $Block;
+        if ($Line['text'] == '[toc]') {
+            if (isset($this->tocSettings['inline']) && $this->tocSettings['inline'] == false && $isInline == true) {
+                return;
+            }
+
+            $selectorList = isset($this->tocSettings['selectors']) ? $this->tocSettings['selectors'] : ['h1','h2','h3','h4','h5','h6'];
+
+            // Check if $Line[toc][type] already is defined
+            if (!isset($Line['toc']['type'])) {
+                $Line['toc']['type'] = 'array';
+            }
+
+            foreach ($selectorList as $selector) {
+                $selectors[] = (integer) trim($selector, 'h');
+            }
+
+            $cleanDoc = preg_replace('/<!--(.|\s)*?-->/', '', $this->fullDocument);
+            $headerLines = array();
+            $prevLine = '';
+
+            // split text into lines
+            $lines = explode("\n", $cleanDoc);
+
+            foreach ($lines as $headerLine) {
+                if (strspn($headerLine, '#') > 0 || strspn($headerLine, '=') >= 3 || strspn($headerLine, '-') >= 3) {
+                    $level = strspn($headerLine, '#');
+
+                    // Setext headers
+                    if (strspn($headerLine, '=') >= 3 && $prevLine !== '') {
+                        $level = 1;
+                        $headerLine = $prevLine;
+                    } elseif (strspn($headerLine, '-') >= 3 && $prevLine !== '') {
+                        $level = 2;
+                        $headerLine = $prevLine;
+                    }
+
+                    if (in_array($level, $selectors) && $level > 0 && $level <= 6) {
+                        $text = preg_replace('/[ #]*{('.$this->regexAttribute.'+)}[ ]*$/', '', $headerLine);
+                        $text = trim(trim($text, '#'));
+
+                        // createAnchorID
+                        $id = $this->createAnchorID($text, ['transliterate' => false]);
+
+                        if (preg_match('/{('.$this->regexAttribute.'+)}$/', $headerLine, $matches)) {
+                            if (strspn($matches[1], '#') > 0) {
+                                $id = trim($matches[1], '#');
+                            }
+                        }
+
+                        // ~
+
+                        if ($this->firstHeadLevel === 0) {
+                            $this->firstHeadLevel = $level;
+                        }
+
+                        $cutIndent = $this->firstHeadLevel - 1;
+
+                        if ($cutIndent > $level) {
+                            $level = 1;
+                        } else {
+                            $level = $level - $cutIndent;
+                        }
+
+                        $indent = str_repeat('  ', $level);
+
+                        // ~
+
+                        if ($Line['toc']['type'] == 'string') {
+                            $this->contentsListString .= "$indent- [${text}](#${id})\n";
+                        } else {
+                            $this->contentsListArray[] = "$indent- [${text}](#${id})\n";
+                        }
+                    }
+                }
+                $prevLine = $headerLine;
+            }
+
+            if ($Line['toc']['type'] == 'string') {
+                return $this->text($this->contentsListString);
+            }
+
+            // ~
+
+            $Block = array(
+
+                'element' => array(
+                    'name' => 'nav',
+                    'attributes' => array(
+                        'id'   => 'table-of-contents',
+                    ),
+                    'elements' => array(
+                        '1' => array(
+                            "handler" => array(
+                                "function" => "li",
+                                "argument" => $this->contentsListArray,
+                                "destination" => "elements",
+                            ),
+                        ),
+                    ),
+                ),
+            );
+
+            // ~
+
+            return $Block;
+        }
     }
 
-    #
-    # Block Mermaid
-    # --------------------------------------------------------------------------
-    protected function blockMermaid($Line)
+
+    //
+    // Tables
+    // -------------------------------------------------------------------------
+
+    protected function blockTableContinue($Line, array $Block)
     {
-        if (!$this->mermaidMode) {
+        if (isset($Block['interrupted'])) {
             return;
         }
 
+        if (count($Block['alignments']) === 1 || $Line['text'][0] === '|' || strpos($Line['text'], '|')) {
+            $Elements = array();
+
+            $row = $Line['text'];
+
+            $row = trim($row);
+            $row = trim($row, '|');
+
+
+            preg_match_all('/(?:(\\\\[|])|[^|`]|`[^`]++`|`)++/', $row, $matches);
+
+            $cells = array_slice($matches[0], 0, count($Block['alignments']));
+
+            foreach ($cells as $index => $cell) {
+                $cell = trim($cell);
+
+                if ($this->smartTypographyMode) {
+                    $cellContent = $this->smartTypographyReplace($cell);
+                }
+
+                $Element = array(
+                    'name' => 'td',
+                    'handler' => array(
+                        'function' => 'lineElements',
+                        'argument' => $cellContent ?? $cell,
+                        'destination' => 'elements',
+                    )
+                );
+
+                if (isset($Block['alignments'][$index])) {
+                    $Element['attributes'] = array(
+                        'style' => 'text-align: ' . $Block['alignments'][$index] . ';',
+                    );
+                }
+
+                $Elements []= $Element;
+            }
+
+            $Element = array(
+                'name' => 'tr',
+                'elements' => $Elements,
+            );
+
+            $Block['element']['elements'][1]['elements'] []= $Element;
+
+            // ~
+
+            return $Block;
+        }
+    }
+
+
+    //
+    // Quote
+
+    protected function blockQuote($Line)
+    {
+        if (preg_match('/^>(?!>)[ ]?+(.*+)/', $Line['text'], $matches)) {
+            $Block = array(
+                'element' => array(
+                    'name' => 'blockquote',
+                    'handler' => array(
+                        'function' => 'linesElements',
+                        'argument' => (array) $matches[1],
+                        'destination' => 'elements',
+                    )
+                ),
+            );
+
+            // ~
+
+            return $Block;
+        }
+    }
+
+    // ~
+
+    protected function blockQuoteContinue($Line, array $Block)
+    {
+        if (isset($Block['interrupted'])) {
+            return;
+        }
+
+        // ~
+
+        if ($Line['text'][0] === '>' && preg_match('/^>(?!>)[ ]?+(.*+)/', $Line['text'], $matches)) {
+            $Block['element']['handler']['argument'] []= $matches[1];
+
+            return $Block;
+        }
+
+        // ~
+
+        if (! isset($Block['interrupted'])) {
+            $Block['element']['handler']['argument'] []= $Line['text'];
+
+            return $Block;
+        }
+    }
+
+    //
+    // Block Fenced Code
+    // --------------------------------------------------------------------------
+
+    protected function blockFencedCode($Line)
+    {
         $marker = $Line['text'][0];
 
         $openerLength = strspn($Line['text'], $marker);
 
-        if ($openerLength < 2) {
+        if ($openerLength < 3) {
             return;
         }
 
-        $this->infostring = strtolower(trim(substr($Line['text'], $openerLength), "\t "));
+        $language = trim(preg_replace('/^`{3}([^\s]+)(.+)?/s', '$1', $Line['text']));
+        $infostring = trim(preg_replace('/^`{3}([^\s]+)(.+)?/s', '$2', $Line['text']));
 
-        if (strpos($this->infostring, '%') !== false) {
+        if (strpos($infostring, '`') !== false) {
             return;
         }
 
+        // Mermaid.js https://mermaidjs.github.io
+        if (strtolower($language) == 'mermaid') {
+            $Element = array(
+                'text' => ''
+            );
+
+            $Block = array(
+                'char' => $marker,
+                'openerLength' => $openerLength,
+                'element' => array(
+                    'element' => $Element,
+                    'name' => 'div',
+                    'attributes' => array(
+                        'class' => 'mermaid'
+                    ),
+                )
+            );
+
+            return $Block;
+        }
+
+
+        // Chart.js https://www.chartjs.org/
+        if (strtolower($language) == 'chart') {
+            $Element = array(
+                'text' => ''
+            );
+
+            $Block = array(
+                'char' => $marker,
+                'openerLength' => $openerLength,
+                'element' => array(
+                    'element' => $Element,
+                    'name' => 'canvas',
+                    'attributes' => array(
+                        'class' => 'chartjs'
+                    ),
+                )
+            );
+
+            return $Block;
+        }
 
         $Element = array(
-            'text' => ''
+            'name' => 'code',
+            'text' => '',
         );
+
+        if ($language !== '') {
+            $Element['attributes'] = array('class' => "language-$language");
+        }
 
         $Block = array(
             'char' => $marker,
             'openerLength' => $openerLength,
             'element' => array(
+                'name' => 'pre',
                 'element' => $Element,
-                'name' => 'div',
-                'attributes' => array(
-                    'class' => 'mermaid'
-                ),
-            )
+            ),
         );
+
+        $attr = trim($infostring, '{}');
+        $Block['element']['attributes'] = $this->parseAttributeData($attr);
+
+        // ~
 
         return $Block;
     }
 
-    protected function blockMermaidContinue($Line, $Block)
-    {
-        if (!$this->mermaidMode) {
-            return;
-        }
 
+    //
+    // Block Math
+    // --------------------------------------------------------------------------
+
+    protected function blockMath($Line)
+    {
+        $Block = array(
+            'element' => array(
+                'text' => '',
+            ),
+        );
+
+        if (preg_match('/^(?<!\\\\)(\\\\\[)(?!.)$/', $Line['text'])) {
+            $Block['end'] = '\]';
+            return $Block;
+        } elseif (preg_match('/^(?<!\\\\)(\$\$)(?!.)$/', $Line['text'])) {
+            $Block['end'] = '$$';
+            return $Block;
+        }
+    }
+
+    // ~
+
+    protected function blockMathContinue($Line, $Block)
+    {
         if (isset($Block['complete'])) {
             return;
         }
 
-        // A blank newline has occurred.
         if (isset($Block['interrupted'])) {
-            $Block['element']['text'] .= "\n";
+            $Block['element']['text'] .= str_repeat("\n", $Block['interrupted']);
+
             unset($Block['interrupted']);
         }
 
-        // Check for end of the block.
-        if (($len = strspn($Line['text'], $Block['char'])) >= $Block['openerLength'] and chop(substr($Line['text'], $len), ' ') === '') {
-            $Block['element']['element']['text'] = substr($Block['element']['element']['text'], 1);
-
+        if (preg_match('/^(?<!\\\\)(\\\\\])$/', $Line['text']) && $Block['end'] === '\]') {
             $Block['complete'] = true;
-
+            $Block['math'] = true;
+            $Block['element']['text'] = "\\[".$Block['element']['text']."\\]";
+            return $Block;
+        } elseif (preg_match('/^(?<!\\\\)(\$\$)$/', $Line['text']) && $Block['end'] === '$$') {
+            $Block['complete'] = true;
+            $Block['math'] = true;
+            $Block['element']['text'] = "$$".$Block['element']['text']."$$";
             return $Block;
         }
 
-        $Block['element']['element']['text'] .= "\n" . $Line['body'];
+
+        $Block['element']['text'] .= "\n" . $Line['body'];
+
+        // ~
 
         return $Block;
     }
 
-    protected function blockMermaidComplete($Block)
+    // ~
+
+    protected function blockMathComplete($Block)
     {
         return $Block;
     }
 
-
-    #
-    # List with support for checkbox
-    # --------------------------------------------------------------------------
+    //
+    // Block Checkbox
+    // --------------------------------------------------------------------------
 
     protected function blockList($Line, array $CurrentBlock = null)
     {
@@ -838,8 +1004,8 @@ class ParsedownExtreme extends ParsedownExtra
                 if ($listStart !== '1') {
                     if (
                         isset($CurrentBlock)
-                        and $CurrentBlock['type'] === 'Paragraph'
-                        and ! isset($CurrentBlock['interrupted'])
+                        && $CurrentBlock['type'] === 'Paragraph'
+                        && ! isset($CurrentBlock['interrupted'])
                     ) {
                         return;
                     }
@@ -862,29 +1028,28 @@ class ParsedownExtreme extends ParsedownExtra
             $attributes && $Block['li']['attributes'] = $attributes;
 
             $Block['element']['elements'] []= & $Block['li'];
-
             return $Block;
         }
     }
 
-
+    // ~
 
     protected function blockListContinue($Line, array $Block)
     {
-        if (isset($Block['interrupted']) and empty($Block['li']['handler']['argument'])) {
+        if (isset($Block['interrupted']) && empty($Block['li']['handler']['argument'])) {
             return null;
         }
 
         $requiredIndent = ($Block['indent'] + strlen($Block['data']['marker']));
 
         if ($Line['indent'] < $requiredIndent
-            and (
+            && (
                 (
                     $Block['data']['type'] === 'ol'
-                    and preg_match('/^[0-9]++'.$Block['data']['markerTypeRegex'].'(?:[ ]++(.*)|$)/', $Line['text'], $matches)
+                    && preg_match('/^[0-9]++'.$Block['data']['markerTypeRegex'].'(?:[ ]++(.*)|$)/', $Line['text'], $matches)
                 ) or (
                     $Block['data']['type'] === 'ul'
-                    and preg_match('/^'.$Block['data']['markerTypeRegex'].'(?:[ ]++(.*)|$)/', $Line['text'], $matches)
+                    && preg_match('/^'.$Block['data']['markerTypeRegex'].'(?:[ ]++(.*)|$)/', $Line['text'], $matches)
                 )
             )
         ) {
@@ -898,7 +1063,7 @@ class ParsedownExtreme extends ParsedownExtra
 
             unset($Block['li']);
 
-            $text = isset($matches[1]) ? $matches[1] : '';
+            $text = $matches[1] ?? '';
 
             $this->checkbox($text, $attributes);
 
@@ -917,11 +1082,11 @@ class ParsedownExtreme extends ParsedownExtra
             $Block['element']['elements'] []= & $Block['li'];
 
             return $Block;
-        } elseif ($Line['indent'] < $requiredIndent and $this->blockList($Line)) {
+        } elseif ($Line['indent'] < $requiredIndent && $this->blockList($Line)) {
             return null;
         }
 
-        if ($Line['text'][0] === '[' and $this->blockReference($Line)) {
+        if ($Line['text'][0] === '[' && $this->blockReference($Line)) {
             return $Block;
         }
 
@@ -938,6 +1103,8 @@ class ParsedownExtreme extends ParsedownExtra
 
             $Block['li']['handler']['argument'] []= $text;
 
+            // ~
+
             return $Block;
         }
 
@@ -946,9 +1113,13 @@ class ParsedownExtreme extends ParsedownExtra
 
             $Block['li']['handler']['argument'] []= $text;
 
+            // ~
+
             return $Block;
         }
     }
+
+    // ~
 
     protected function blockListComplete(array $Block)
     {
@@ -960,6 +1131,8 @@ class ParsedownExtreme extends ParsedownExtra
             }
         }
 
+        // ~
+
         return $Block;
     }
 
@@ -968,66 +1141,52 @@ class ParsedownExtreme extends ParsedownExtra
     // -----------------------         Helpers        --------------------------
     // -------------------------------------------------------------------------
 
-
-    private function oembed($link, $regxr)
+    public function text($text)
     {
-        if ($data = @file_get_contents($link)) {
-            return preg_replace($regxr, '$1', $data);
+        $Elements = $this->textElements($text);
+
+        // convert to markup
+        $markup = $this->elements($Elements);
+
+        // trim line breaks
+        $markup = trim($markup, "\n");
+
+        // merge consecutive dl elements
+
+        $markup = preg_replace('/<\/dl>\s+<dl>\s+/', '', $markup);
+
+        // add footnotes
+
+        if (isset($this->DefinitionData['Footnote'])) {
+            $Element = $this->buildFootnoteElement();
+
+            $markup .= "\n" . $this->element($Element);
         }
 
-        return;
+        // ~
+
+        return $markup;
     }
 
-    private function hyphenize($string)
+
+    private function smartTypographyReplace($Text)
     {
-        $dict = array(
-            "I'm"      => "I am",
-            "thier"    => "their",
-            // Add your own replacements here
+        $typographicReplace = array(
+            '/(?<!\\\\)\(c\)/i' => '&copy;',
+            '/(?<!\\\\)\(r\)/i' => '&reg;',
+            '/(?<!\\\\)\(tm\)/i' => '&trade;',
+            '/(?<!\\\\)(?<!\.)\.{3}(?!\.)/' => '&hellip;',
+            '/(?<!\\\\)(?<!-)-{3}(?!-)/' => '&mdash;',
+            '/(?<!\\\\)(?<!-)--\s(?!-)/' => '&ndash;',
+            '/(?<!\\\\)(?<!<)<<(?!<)/' => '&laquo;',
+            '/(?<!\\\\)(?<!>)>>(?!>)/' => '&raquo;',
         );
-        return strtolower(
-            preg_replace(
-              array( '#[\\s-]+#', '#[^A-Za-z0-9\. -]+#' ),
-              array( '-', '' ),
-              // the full cleanString() can be downloaded from http://www.unexpectedit.com/php/php-clean-string-of-utf8-chars-convert-to-similar-ascii-char
-              $this->cleanString(
-                  str_replace( // preg_replace can be used to support more complicated replacements
-                      array_keys($dict),
-                      array_values($dict),
-                      urldecode($string)
-                  )
-              )
-            )
-        );
+        return $this->pregReplaceAssoc($typographicReplace, $Text);
     }
 
-    private function cleanString($text)
-    {
-        $utf8 = array(
-            '/[áàâãªä]/u'   =>   'a',
-            '/[ÁÀÂÃÄ]/u'    =>   'A',
-            '/[ÍÌÎÏ]/u'     =>   'I',
-            '/[íìîï]/u'     =>   'i',
-            '/[éèêë]/u'     =>   'e',
-            '/[ÉÈÊË]/u'     =>   'E',
-            '/[óòôõºö]/u'   =>   'o',
-            '/[ÓÒÔÕÖ]/u'    =>   'O',
-            '/[úùûü]/u'     =>   'u',
-            '/[ÚÙÛÜ]/u'     =>   'U',
-            '/ç/'           =>   'c',
-            '/Ç/'           =>   'C',
-            '/ñ/'           =>   'n',
-            '/Ñ/'           =>   'N',
-            '/–/'           =>   '-', // UTF-8 hyphen to "normal" hyphen
-            '/[’‘‹›‚]/u'    =>   ' ', // Literally a single quote
-            '/[“”«»„]/u'    =>   ' ', // Double quote
-            '/ /'           =>   ' ', // nonbreaking space (equiv. to 0x160)
-        );
-        return preg_replace(array_keys($utf8), array_values($utf8), $text);
-    }
 
     // Checkbox
-    protected function checkbox(&$text, &$attributes)
+    private function checkbox(&$text, &$attributes)
     {
         if (strpos($text, '[x]') !== false || strpos($text, '[ ]') !== false) {
             $attributes = array("style" => "list-style: none;");
@@ -1038,80 +1197,133 @@ class ParsedownExtreme extends ParsedownExtra
         }
     }
 
-    // ReplaceAssoc
-    protected function strReplaceAssoc(array $replace, $subject)
+    // pregReplaceAssoc
+    private function pregReplaceAssoc(array $replace, $subject)
     {
-        return str_replace(array_keys($replace), array_values($replace), $subject);
+        return preg_replace(array_keys($replace), array_values($replace), $subject);
     }
 
 
 
-    // -------------------------------------------------------------------------
-
-    protected function seems_utf8($str)
+    private function createAnchorID($str, $options = array())
     {
-        $this->mbstring_binary_safe_encoding();
-        $length = strlen($str);
-        $this->reset_mbstring_encoding();
-        for ($i=0; $i < $length; $i++) {
-            $c = ord($str[$i]);
-            if ($c < 0x80) {
-                $n = 0;
-            } // 0bbbbbbb
-            elseif (($c & 0xE0) == 0xC0) {
-                $n=1;
-            } // 110bbbbb
-            elseif (($c & 0xF0) == 0xE0) {
-                $n=2;
-            } // 1110bbbb
-            elseif (($c & 0xF8) == 0xF0) {
-                $n=3;
-            } // 11110bbb
-            elseif (($c & 0xFC) == 0xF8) {
-                $n=4;
-            } // 111110bb
-            elseif (($c & 0xFE) == 0xFC) {
-                $n=5;
-            } // 1111110b
-            else {
-                return false;
-            } // Does not match any model
-            for ($j=0; $j<$n; $j++) { // n bytes matching 10bbbbbb follow ?
-                if ((++$i == $length) || ((ord($str[$i]) & 0xC0) != 0x80)) {
-                    return false;
-                }
+        // Make sure string is in UTF-8 and strip invalid UTF-8 characters
+        $str = mb_convert_encoding((string)$str, 'UTF-8', mb_list_encodings());
+
+        $defaults = array(
+            'delimiter' => '-',
+            'limit' => null,
+            'lowercase' => true,
+            'replacements' => array(),
+            'transliterate' => false,
+        );
+
+        // Merge options
+        $options = array_merge($defaults, $options);
+
+        $char_map = array(
+            // Latin
+            'À' => 'A', 'Á' => 'A', 'Â' => 'A', 'Ã' => 'A', 'Ä' => 'A', 'Å' => 'Aa', 'Æ' => 'AE', 'Ç' => 'C',
+            'È' => 'E', 'É' => 'E', 'Ê' => 'E', 'Ë' => 'E', 'Ì' => 'I', 'Í' => 'I', 'Î' => 'I', 'Ï' => 'I',
+            'Ð' => 'D', 'Ñ' => 'N', 'Ò' => 'O', 'Ó' => 'O', 'Ô' => 'O', 'Õ' => 'O', 'Ö' => 'O', 'Ő' => 'O',
+            'Ø' => 'Oe', 'Ù' => 'U', 'Ú' => 'U', 'Û' => 'U', 'Ü' => 'U', 'Ű' => 'U', 'Ý' => 'Y', 'Þ' => 'TH',
+            'ß' => 'ss', 'Œ' => 'OE',
+            'à' => 'a', 'á' => 'a', 'â' => 'a', 'ã' => 'a', 'ä' => 'a', 'å' => 'aa', 'æ' => 'ae', 'ç' => 'c',
+            'è' => 'e', 'é' => 'e', 'ê' => 'e', 'ë' => 'e', 'ì' => 'i', 'í' => 'i', 'î' => 'i', 'ï' => 'i',
+            'ð' => 'd', 'ñ' => 'n', 'ò' => 'o', 'ó' => 'o', 'ô' => 'o', 'õ' => 'o', 'ö' => 'o', 'ő' => 'o',
+            'ø' => 'oe', 'ù' => 'u', 'ú' => 'u', 'û' => 'u', 'ü' => 'u', 'ű' => 'u', 'ý' => 'y', 'þ' => 'th',
+            'ÿ' => 'y', 'œ' => 'oe',
+            // Latin symbols
+            '©' => '(c)',
+            // Greek
+            'Α' => 'A', 'Β' => 'B', 'Γ' => 'G', 'Δ' => 'D', 'Ε' => 'E', 'Ζ' => 'Z', 'Η' => 'H', 'Θ' => '8',
+            'Ι' => 'I', 'Κ' => 'K', 'Λ' => 'L', 'Μ' => 'M', 'Ν' => 'N', 'Ξ' => '3', 'Ο' => 'O', 'Π' => 'P',
+            'Ρ' => 'R', 'Σ' => 'S', 'Τ' => 'T', 'Υ' => 'Y', 'Φ' => 'F', 'Χ' => 'X', 'Ψ' => 'PS', 'Ω' => 'W',
+            'Ά' => 'A', 'Έ' => 'E', 'Ί' => 'I', 'Ό' => 'O', 'Ύ' => 'Y', 'Ή' => 'H', 'Ώ' => 'W', 'Ϊ' => 'I',
+            'Ϋ' => 'Y',
+            'α' => 'a', 'β' => 'b', 'γ' => 'g', 'δ' => 'd', 'ε' => 'e', 'ζ' => 'z', 'η' => 'h', 'θ' => '8',
+            'ι' => 'i', 'κ' => 'k', 'λ' => 'l', 'μ' => 'm', 'ν' => 'n', 'ξ' => '3', 'ο' => 'o', 'π' => 'p',
+            'ρ' => 'r', 'σ' => 's', 'τ' => 't', 'υ' => 'y', 'φ' => 'f', 'χ' => 'x', 'ψ' => 'ps', 'ω' => 'w',
+            'ά' => 'a', 'έ' => 'e', 'ί' => 'i', 'ό' => 'o', 'ύ' => 'y', 'ή' => 'h', 'ώ' => 'w', 'ς' => 's',
+            'ϊ' => 'i', 'ΰ' => 'y', 'ϋ' => 'y', 'ΐ' => 'i',
+            // Turkish
+            'Ş' => 'S', 'İ' => 'I', 'Ç' => 'C', 'Ü' => 'U', 'Ö' => 'O', 'Ğ' => 'G',
+            'ş' => 's', 'ı' => 'i', 'ç' => 'c', 'ü' => 'u', 'ö' => 'o', 'ğ' => 'g',
+            // Russian
+            'А' => 'A', 'Б' => 'B', 'В' => 'V', 'Г' => 'G', 'Д' => 'D', 'Е' => 'E', 'Ё' => 'Yo', 'Ж' => 'Zh',
+            'З' => 'Z', 'И' => 'I', 'Й' => 'J', 'К' => 'K', 'Л' => 'L', 'М' => 'M', 'Н' => 'N', 'О' => 'O',
+            'П' => 'P', 'Р' => 'R', 'С' => 'S', 'Т' => 'T', 'У' => 'U', 'Ф' => 'F', 'Х' => 'H', 'Ц' => 'C',
+            'Ч' => 'Ch', 'Ш' => 'Sh', 'Щ' => 'Sh', 'Ъ' => '', 'Ы' => 'Y', 'Ь' => '', 'Э' => 'E', 'Ю' => 'Yu',
+            'Я' => 'Ya',
+            'а' => 'a', 'б' => 'b', 'в' => 'v', 'г' => 'g', 'д' => 'd', 'е' => 'e', 'ё' => 'yo', 'ж' => 'zh',
+            'з' => 'z', 'и' => 'i', 'й' => 'j', 'к' => 'k', 'л' => 'l', 'м' => 'm', 'н' => 'n', 'о' => 'o',
+            'п' => 'p', 'р' => 'r', 'с' => 's', 'т' => 't', 'у' => 'u', 'ф' => 'f', 'х' => 'h', 'ц' => 'c',
+            'ч' => 'ch', 'ш' => 'sh', 'щ' => 'sh', 'ъ' => '', 'ы' => 'y', 'ь' => '', 'э' => 'e', 'ю' => 'yu',
+            'я' => 'ya',
+            // Ukrainian
+            'Є' => 'Ye', 'І' => 'I', 'Ї' => 'Yi', 'Ґ' => 'G',
+            'є' => 'ye', 'і' => 'i', 'ї' => 'yi', 'ґ' => 'g',
+            // Czech
+            'Č' => 'C', 'Ď' => 'D', 'Ě' => 'E', 'Ň' => 'N', 'Ř' => 'R', 'Š' => 'S', 'Ť' => 'T', 'Ů' => 'U',
+            'Ž' => 'Z',
+            'č' => 'c', 'ď' => 'd', 'ě' => 'e', 'ň' => 'n', 'ř' => 'r', 'š' => 's', 'ť' => 't', 'ů' => 'u',
+            'ž' => 'z',
+            // Polish
+            'Ą' => 'A', 'Ć' => 'C', 'Ę' => 'e', 'Ł' => 'L', 'Ń' => 'N', 'Ó' => 'o', 'Ś' => 'S', 'Ź' => 'Z',
+            'Ż' => 'Z',
+            'ą' => 'a', 'ć' => 'c', 'ę' => 'e', 'ł' => 'l', 'ń' => 'n', 'ó' => 'o', 'ś' => 's', 'ź' => 'z',
+            'ż' => 'z',
+            // Latvian
+            'Ā' => 'A', 'Č' => 'C', 'Ē' => 'E', 'Ģ' => 'G', 'Ī' => 'i', 'Ķ' => 'k', 'Ļ' => 'L', 'Ņ' => 'N',
+            'Š' => 'S', 'Ū' => 'u', 'Ž' => 'Z',
+            'ā' => 'a', 'č' => 'c', 'ē' => 'e', 'ģ' => 'g', 'ī' => 'i', 'ķ' => 'k', 'ļ' => 'l', 'ņ' => 'n',
+            'š' => 's', 'ū' => 'u', 'ž' => 'z'
+        );
+
+        // Make custom replacements
+        $str = preg_replace(array_keys($options['replacements']), $options['replacements'], $str);
+
+        // Transliterate characters to ASCII
+        if ($options['transliterate']) {
+            $str = str_replace(array_keys($char_map), $char_map, $str);
+        }
+
+        // Replace non-alphanumeric characters with our delimiter
+        $str = preg_replace('/[^\p{L}\p{Nd}]+/u', $options['delimiter'], $str);
+
+        // Remove duplicate delimiters
+        $str = preg_replace('/(' . preg_quote($options['delimiter'], '/') . '){2,}/', '$1', $str);
+
+        // Truncate slug to max. characters
+        $str = mb_substr($str, 0, ($options['limit'] ? $options['limit'] : mb_strlen($str, 'UTF-8')), 'UTF-8');
+
+        // Remove delimiter from ends
+        $str = trim($str, $options['delimiter']);
+
+        return $options['lowercase'] ? mb_strtolower($str, 'UTF-8') : $str;
+    }
+
+
+    protected function parseAttributeData($attributeString)
+    {
+        $Data = array();
+
+        $attributes = preg_split('/[ ]+/', $attributeString, - 1, PREG_SPLIT_NO_EMPTY);
+
+        foreach ($attributes as $attribute) {
+            if ($attribute[0] === '#') {
+                $Data['id'] = substr($attribute, 1);
+            } else { // "."
+                $classes []= substr($attribute, 1);
             }
         }
-        return true;
+
+        if (isset($classes)) {
+            $Data['class'] = implode(' ', $classes);
+        }
+
+        return $Data;
     }
 
-    protected function reset_mbstring_encoding()
-    {
-        $this->mbstring_binary_safe_encoding(true);
-    }
-
-    protected function mbstring_binary_safe_encoding($reset = false)
-    {
-        static $encodings = array();
-        static $overloaded = null;
-
-        if (is_null($overloaded)) {
-            $overloaded = function_exists('mb_internal_encoding') && (ini_get('mbstring.func_overload') & 2);
-        }
-
-        if (false === $overloaded) {
-            return;
-        }
-
-        if (! $reset) {
-            $encoding = mb_internal_encoding();
-            array_push($encodings, $encoding);
-            mb_internal_encoding('ISO-8859-1');
-        }
-
-        if ($reset && $encodings) {
-            $encoding = array_pop($encodings);
-            mb_internal_encoding($encoding);
-        }
-    }
+    protected $regexAttribute = '(?:[#.][-\w]+[ ]*)';
 }

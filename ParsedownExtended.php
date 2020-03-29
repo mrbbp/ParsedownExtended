@@ -45,7 +45,7 @@ class ParsedownExtended extends DynamicParent
         $this->inlineMarkerList .= '\\';
 
         $this->InlineTypes['='][] = 'MarkText';
-        $this->inlineMarkerList .= '=';
+        $this->inlineMarkerList .= ':';
 
         $this->InlineTypes['+'][] = 'InsertText';
         $this->inlineMarkerList .= '+';
